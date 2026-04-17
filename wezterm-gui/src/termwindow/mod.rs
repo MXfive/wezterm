@@ -1000,11 +1000,17 @@ impl TermWindow {
             }
             WindowEvent::NeedRepaint => {
                 if self.resizes_pending > 0 {
+                    log::trace!(
+                        "[redraw] NeedRepaint: deferred — resizes_pending={}",
+                        self.resizes_pending
+                    );
                     self.is_repaint_pending = true;
                     Ok(true)
                 } else if self.webgpu.is_some() {
+                    log::trace!("[redraw] NeedRepaint: -> do_paint_webgpu");
                     self.do_paint_webgpu()
                 } else {
+                    log::trace!("[redraw] NeedRepaint: -> do_paint");
                     Ok(self.do_paint(window))
                 }
             }
@@ -1415,7 +1421,14 @@ impl TermWindow {
         let mux = Mux::get();
         let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
             Some(tab) => tab,
-            None => return false,
+            None => {
+                log::trace!(
+                    "[redraw] is_pane_visible: pane={} -> false (no active tab for window={})",
+                    pane_id,
+                    self.mux_window_id,
+                );
+                return false;
+            }
         };
 
         let tab_id = tab.tab_id();
@@ -1425,18 +1438,48 @@ impl TermWindow {
             .as_ref()
             .map(|overlay| overlay.pane.clone())
         {
-            return tab_overlay.pane_id() == pane_id;
+            let overlay_pane_id = tab_overlay.pane_id();
+            let visible = overlay_pane_id == pane_id;
+            log::trace!(
+                "[redraw] is_pane_visible: pane={} tab={} has_overlay=true \
+                 overlay_pane={} -> {}",
+                pane_id,
+                tab_id,
+                overlay_pane_id,
+                visible,
+            );
+            return visible;
         }
 
-        tab.contains_pane(pane_id)
+        let visible = tab.contains_pane(pane_id);
+        log::trace!(
+            "[redraw] is_pane_visible: pane={} tab={} has_overlay=false -> {}",
+            pane_id,
+            tab_id,
+            visible,
+        );
+        visible
     }
 
     fn mux_pane_output_event(&mut self, pane_id: PaneId) {
         metrics::histogram!("mux.pane_output_event.rate").record(1.);
-        if self.is_pane_visible(pane_id) {
+        let visible = self.is_pane_visible(pane_id);
+        log::trace!(
+            "[redraw] mux_pane_output_event: pane={} visible={} window={:?}",
+            pane_id,
+            visible,
+            self.window.is_some(),
+        );
+        if visible {
             if let Some(ref win) = self.window {
+                log::trace!("[redraw] mux_pane_output_event: calling win.invalidate() for pane={}", pane_id);
                 win.invalidate();
             }
+        } else {
+            log::trace!(
+                "[redraw] mux_pane_output_event: SKIPPED invalidate — pane={} not visible",
+                pane_id,
+            );
         }
     }
 

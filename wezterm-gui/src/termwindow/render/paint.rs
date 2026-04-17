@@ -23,6 +23,7 @@ impl crate::TermWindow {
         self.allow_images = AllowImage::Yes;
 
         let start = Instant::now();
+        log::trace!("[redraw] paint_impl: ENTER frame={}", self.num_frames);
 
         {
             let diff = start.duration_since(self.last_fps_check_time);

@@ -168,9 +168,19 @@ END
             .join("WezTerm.app")
             .join("Contents")
             .join("Info.plist");
-        let build_target_dir = std::env::var("CARGO_TARGET_DIR")
-            .and_then(|s| Ok(std::path::PathBuf::from(s)))
-            .unwrap_or(repo_dir.join("target").join(profile));
+        // OUT_DIR is e.g. target/<profile>/build/wezterm-gui-xxx/out
+        // We want target/<profile>/ which is three levels up from OUT_DIR
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+        let build_target_dir = out_dir
+            .parent() // build/wezterm-gui-xxx
+            .and_then(|p| p.parent()) // build/
+            .and_then(|p| p.parent()) // target/<profile>/
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| {
+                std::env::var("CARGO_TARGET_DIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or(repo_dir.join("target").join(profile))
+            });
         let dest_plist = build_target_dir.join("Info.plist");
         println!("cargo:rerun-if-changed=assets/macos/WezTerm.app/Contents/Info.plist");
 

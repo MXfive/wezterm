@@ -1231,6 +1231,16 @@ impl WindowInner {
 
     fn invalidate(&mut self) {
         unsafe {
+            if let Some(window_view) = WindowView::get_this(&**self.view) {
+                let state = window_view.inner.borrow();
+                log::trace!(
+                    "[redraw] WindowInner::invalidate: window={} calling setNeedsDisplay:YES \
+                     (paint_throttled={} invalidated={})",
+                    state.window_id,
+                    state.paint_throttled,
+                    state.invalidated,
+                );
+            }
             let () = msg_send![*self.view, setNeedsDisplay: YES];
             if let Some(window_view) = WindowView::get_this(&**self.view) {
                 window_view.inner.borrow_mut().invalidated = true;
@@ -3061,25 +3071,48 @@ impl WindowView {
             }
 
             if inner.paint_throttled {
+                log::trace!(
+                    "[redraw] draw_rect: window={} paint_throttled=true -> \
+                     setting invalidated=true, DROPPING NeedRepaint",
+                    inner.window_id,
+                );
                 inner.invalidated = true;
             } else {
+                log::trace!(
+                    "[redraw] draw_rect: window={} paint_throttled=false -> \
+                     dispatching NeedRepaint, starting throttle timer (max_fps={})",
+                    inner.window_id,
+                    inner.config.max_fps,
+                );
                 inner.events.dispatch(WindowEvent::NeedRepaint);
                 inner.invalidated = false;
                 inner.paint_throttled = true;
 
                 let window_id = inner.window_id;
                 let max_fps = inner.config.max_fps;
+                let throttle_ms = 1000 / max_fps as u64;
                 promise::spawn::spawn(async move {
-                    async_io::Timer::after(std::time::Duration::from_millis(1000 / max_fps as u64))
+                    async_io::Timer::after(std::time::Duration::from_millis(throttle_ms))
                         .await;
                     Connection::with_window_inner(window_id, move |inner| {
                         if let Some(window_view) = WindowView::get_this(unsafe { &**inner.view }) {
                             let mut state = window_view.inner.borrow_mut();
                             state.paint_throttled = false;
                             if state.invalidated {
+                                log::trace!(
+                                    "[redraw] throttle_timer: window={} invalidated=true \
+                                     -> calling setNeedsDisplay:YES",
+                                    window_id,
+                                );
                                 unsafe {
                                     let () = msg_send![*inner.view, setNeedsDisplay: YES];
                                 }
+                            } else {
+                                log::trace!(
+                                    "[redraw] throttle_timer: window={} invalidated=false \
+                                     -> no repaint scheduled",
+                                    window_id,
+                                );
                             }
                         }
                         Ok(())

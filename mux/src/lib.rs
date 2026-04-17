@@ -123,9 +123,19 @@ fn send_actions_to_mux(pane: &Weak<dyn Pane>, dead: &Arc<AtomicBool>, actions: V
     let start = Instant::now();
     match pane.upgrade() {
         Some(pane) => {
+            let pane_id = pane.pane_id();
+            let n_actions = actions.len();
             pane.perform_actions(actions);
-            histogram!("send_actions_to_mux.perform_actions.latency").record(start.elapsed());
-            Mux::notify_from_any_thread(MuxNotification::PaneOutput(pane.pane_id()));
+            let perform_elapsed = start.elapsed();
+            histogram!("send_actions_to_mux.perform_actions.latency").record(perform_elapsed);
+            log::trace!(
+                "[redraw] send_actions_to_mux: pane={} n_actions={} perform_elapsed={:?} \
+                 -> dispatching PaneOutput notify",
+                pane_id,
+                n_actions,
+                perform_elapsed,
+            );
+            Mux::notify_from_any_thread(MuxNotification::PaneOutput(pane_id));
         }
         None => {
             // Something else removed the pane from
