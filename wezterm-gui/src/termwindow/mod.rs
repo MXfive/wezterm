@@ -1355,6 +1355,11 @@ impl TermWindow {
                 };
                 self.update_title();
                 window.invalidate();
+                // Re-subscribe to pane updates: the old subscription was killed when
+                // WindowRemoved fired for the previous mux window during the workspace
+                // switch (dead.store(true) in mux_pane_output_event_callback), so we
+                // must establish a fresh subscription for the new mux_window_id.
+                self.subscribe_to_pane_updates();
             }
             TermWindowNotif::SetInnerSize { width, height } => {
                 self.set_inner_size(window, width, height);
